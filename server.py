@@ -1,5 +1,3 @@
-# server.py
-
 import asyncio
 import base64
 from fastapi import FastAPI, WebSocket
@@ -46,8 +44,15 @@ async def ws_client(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
             latest_frame = data
+            # Gửi ngay cho tất cả client đang xem
+            disconnected = []
             for client in clients:
-                await client.send_text(data)
+                try:
+                    await client.send_text(data)
+                except WebSocketDisconnect:
+                    disconnected.append(client)
+            for dc in disconnected:
+                clients.discard(dc)
     except WebSocketDisconnect:
         pass
 
@@ -57,9 +62,9 @@ async def ws_view(websocket: WebSocket):
     clients.add(websocket)
     try:
         while True:
-            await asyncio.sleep(1)
+            await asyncio.sleep(10)  # duy trì kết nối
     except WebSocketDisconnect:
-        clients.remove(websocket)
+        clients.discard(websocket)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=10000)

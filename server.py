@@ -1,5 +1,4 @@
 import asyncio
-import base64
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
 from starlette.websockets import WebSocketDisconnect
@@ -16,7 +15,14 @@ html = """
     <title>Stream Viewer</title>
     <style>
         body { margin: 0; background: black; }
-        img { width: 100vw; height: 100vh; object-fit: contain; display: block; }
+        img {
+            width: 100%;
+            height: auto;
+            max-height: 100vh;
+            object-fit: contain;
+            display: block;
+            margin: auto;
+        }
     </style>
 </head>
 <body>
@@ -44,15 +50,15 @@ async def ws_client(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
             latest_frame = data
-            # Gửi ngay cho tất cả client đang xem
-            disconnected = []
+
+            # Gửi ngay cho client đang kết nối
+            disconnected = set()
             for client in clients:
                 try:
                     await client.send_text(data)
                 except WebSocketDisconnect:
-                    disconnected.append(client)
-            for dc in disconnected:
-                clients.discard(dc)
+                    disconnected.add(client)
+            clients.difference_update(disconnected)
     except WebSocketDisconnect:
         pass
 
@@ -62,7 +68,7 @@ async def ws_view(websocket: WebSocket):
     clients.add(websocket)
     try:
         while True:
-            await asyncio.sleep(10)  # duy trì kết nối
+            await asyncio.sleep(1)  # Duy trì kết nối
     except WebSocketDisconnect:
         clients.discard(websocket)
 

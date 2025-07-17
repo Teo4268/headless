@@ -1,30 +1,65 @@
-from flask import Flask, request, send_file, render_template_string
-import os
+# server.py
 
-app = Flask(__name__)
-UPLOAD_FOLDER = 'uploads'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+import asyncio
+import base64
+from fastapi import FastAPI, WebSocket
+from fastapi.responses import HTMLResponse
+from starlette.websockets import WebSocketDisconnect
+import uvicorn
 
-@app.route('/upload', methods=['POST'])
-def upload():
-    file = request.files.get('screenshot')
-    if file:
-        filepath = os.path.join(UPLOAD_FOLDER, 'latest.png')
-        file.save(filepath)
-        return 'Screenshot received!'
-    return 'No file received.', 400
+app = FastAPI()
+latest_frame = None
+clients = set()
 
-@app.route('/')
-def view_image():
-    return render_template_string('''
-        <h1>Ảnh mới nhất:</h1>
-        <img src="/image" style="max-width:90%">
-    ''')
+html = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stream Viewer</title>
+    <style>
+        body { margin: 0; background: black; }
+        img { width: 100vw; height: 100vh; object-fit: contain; display: block; }
+    </style>
+</head>
+<body>
+    <img id="screen" />
+    <script>
+        const img = document.getElementById("screen");
+        const ws = new WebSocket("wss://" + location.host + "/view");
+        ws.onmessage = e => {
+            img.src = "data:image/jpeg;base64," + e.data;
+        };
+    </script>
+</body>
+</html>
+"""
 
-@app.route('/image')
-def image():
-    path = os.path.join(UPLOAD_FOLDER, 'latest.png')
-    return send_file(path, mimetype='image/png')
+@app.get("/")
+async def get():
+    return HTMLResponse(html)
 
-if __name__ == '__main__':
-    app.run(debug=True)
+@app.websocket("/ws")
+async def ws_client(websocket: WebSocket):
+    await websocket.accept()
+    global latest_frame
+    try:
+        while True:
+            data = await websocket.receive_text()
+            latest_frame = data
+            for client in clients:
+                await client.send_text(data)
+    except WebSocketDisconnect:
+        pass
+
+@app.websocket("/view")
+async def ws_view(websocket: WebSocket):
+    await websocket.accept()
+    clients.add(websocket)
+    try:
+        while True:
+            await asyncio.sleep(1)
+    except WebSocketDisconnect:
+        clients.remove(websocket)
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=10000)
